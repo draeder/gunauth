@@ -1163,8 +1163,6 @@ Get user's public key by username.
 
 **Response:**
 ```json
-**Response:**
-```json
 {
   "username": "alice",
   "pub": "user-public-key",
@@ -1228,7 +1226,13 @@ console.log('GUN relay server running on port 8765');
 4. **Monitoring**: Monitor relay health and connectivity
 5. **Backup**: Regular backups of relay data
 
+3. **HTTPS/WSS**: Always use secure connections in production  
+4. **Monitoring**: Monitor relay health and connectivity
+5. **Backup**: Regular backups of relay data
+
 ## 🛡️ Production Considerations for Cloud Deployment
+
+### Security Best Practices
 ```
 
 ## �️ Production Considerations for Cloud Deployment
@@ -1484,6 +1488,13 @@ const verifyResponse = await fetch('https://your-app-domain.com/verify', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ token, pub })
 });
+```
+
+## 📄 License
+
+MIT
+
+A decentralized Identity Provider built on GUN SEA
 ```
 
 ## 📄 License
