@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test.js"
+    "test": "node test.js",
+    "test:cross-domain": "node examples/test-cross-domain.js"
   },
   "engines": {
     "node": ">=18.0.0"

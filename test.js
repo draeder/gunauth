@@ -1,11 +1,61 @@
 import fetch from 'node-fetch';
+import readline from 'readline';
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:8000';
+
+// Helper function to get user input
+function getUserInput(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+// Helper function for password input (hidden)
+function getPasswordInput(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+    // Hide password input
+    rl.stdoutMuted = true;
+    rl._writeToOutput = function _writeToOutput(stringToWrite) {
+      if (rl.stdoutMuted) {
+        rl.output.write('*');
+      } else {
+        rl.output.write(stringToWrite);
+      }
+    };
+  });
+}
 
 async function testAPI() {
   console.log('🧪 Testing GunAuth API...\n');
 
   try {
+    // Get user credentials
+    console.log('Please provide test credentials:');
+    const username = await getUserInput('Username: ');
+    const password = await getPasswordInput('Password: ');
+    console.log(''); // New line after password input
+    
+    if (!username || !password) {
+      throw new Error('Username and password are required');
+    }
+
     // Test health check
     console.log('1. Testing health check...');
     const healthResponse = await fetch(`${BASE_URL}/`);
@@ -18,24 +68,25 @@ async function testAPI() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: 'testuser',
-        password: 'testpassword123'
+        username: username,
+        password: password
       })
     });
     const registerData = await registerResponse.json();
     console.log('✅ Registration:', registerData);
 
     if (registerData.success) {
-      const { pub } = registerData;
+      const { pub, priv } = registerData; // Get both pub and priv from registration
 
-      // Test login
+      // Test login (secure implementation requires private key)
       console.log('\n3. Testing user login...');
       const loginResponse = await fetch(`${BASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: 'testuser',
-          password: 'testpassword123'
+          username: username,
+          password: password,
+          priv: priv // Include private key for secure login
         })
       });
       const loginData = await loginResponse.json();
@@ -56,7 +107,7 @@ async function testAPI() {
 
         // Test user lookup
         console.log('\n5. Testing user lookup...');
-        const userResponse = await fetch(`${BASE_URL}/user/testuser/pub`);
+        const userResponse = await fetch(`${BASE_URL}/user/${username}/pub`);
         const userData = await userResponse.json();
         console.log('✅ User lookup:', userData);
       }

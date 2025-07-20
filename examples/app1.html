@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App 1 - Secure GunAuth Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f0f8ff;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .authenticated { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .unauthenticated { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .session-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .loading { opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 App 1 - Secure GunAuth Demo</h1>
+        <p><strong>Port:</strong> 8001 | <strong>Domain:</strong> localhost:8001</p>
+        
+        <div id="status" class="status unauthenticated">
+            🔒 Not authenticated
+        </div>
+
+        <!-- SSO Method -->
+        <div id="ssoSection">
+            <h3>🌐 SSO Authentication</h3>
+            <p><em>OAuth2-like redirect flow - most secure for production</em></p>
+            <button id="ssoLoginBtn" style="background-color: #17a2b8;">Login via SSO</button>
+            <button id="ssoCheckBtn">Check SSO Status</button>
+            <button id="debugBtn" style="background-color: #ffc107; color: black;">Debug localStorage</button>
+        </div>
+
+        <!-- Direct Registration/Login -->
+        <div id="directAuthSection">
+            <h3>🔐 Direct Authentication</h3>
+            <p><em>Register and login directly with secure client-side key storage</em></p>
+
+        <!-- Registration Form -->
+        <div id="registerSection">
+            <h3>Register New User</h3>
+            <div class="form-group">
+                <input type="text" id="regUsername" placeholder="Username" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="regPassword" placeholder="Password" required>
+            </div>
+            <button id="registerBtn">Register</button>
+        </div>
+
+        <!-- Login Form -->
+        <div id="loginSection">
+            <h3>Login</h3>
+            <div class="form-group">
+                <input type="text" id="loginUsername" placeholder="Username" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="loginPassword" placeholder="Password" required>
+            </div>
+            <button id="loginBtn">Login</button>
+        </div>
+
+        <!-- Session Management -->
+        <div id="sessionSection" style="display:none;">
+            <h3>Session Management</h3>
+            <button id="logoutBtn">Logout</button>
+            <button id="clearDataBtn" style="background-color: #dc3545;">Clear All Data</button>
+        </div>
+
+        <!-- Session Info Display -->
+        <div class="session-info" id="sessionInfo">
+            No session data
+        </div>
+
+        <!-- Cross-domain test -->
+        <div id="crossDomainTest">
+            <h3>Cross-Domain Test</h3>
+            <p>Test if session works in <a href="http://localhost:8002" target="_blank">App 2 (Port 8002)</a></p>
+        </div>
+    </div>
+
+    <!-- Include Gun and GunAuth Client -->
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="gunauth-client.js"></script>
+
+    <script>
+        // Initialize GunAuth Client
+        const auth = new GunAuthClient('http://localhost:8000');
+        
+        // DOM elements
+        const statusDiv = document.getElementById('status');
+        const sessionInfo = document.getElementById('sessionInfo');
+        const registerSection = document.getElementById('registerSection');
+        const loginSection = document.getElementById('loginSection');
+        const sessionSection = document.getElementById('sessionSection');
+        
+        const regUsernameInput = document.getElementById('regUsername');
+        const regPasswordInput = document.getElementById('regPassword');
+        const registerBtn = document.getElementById('registerBtn');
+        
+        const loginUsernameInput = document.getElementById('loginUsername');
+        const loginPasswordInput = document.getElementById('loginPassword');
+        const loginBtn = document.getElementById('loginBtn');
+        
+        const logoutBtn = document.getElementById('logoutBtn');
+        const clearDataBtn = document.getElementById('clearDataBtn');
+        
+        const ssoLoginBtn = document.getElementById('ssoLoginBtn');
+        const ssoCheckBtn = document.getElementById('ssoCheckBtn');
+        const debugBtn = document.getElementById('debugBtn');
+
+        // Handle SSO callback if present
+        async function handleSSO() {
+            if (auth.isSSOCallback()) {
+                console.log('🔄 Processing SSO callback');
+                statusDiv.textContent = 'Processing SSO login...';
+                
+                const result = await auth.handleSSOCallback();
+                
+                if (result.success) {
+                    updateUI();
+                    console.log('✅ SSO login successful:', result);
+                } else {
+                    console.error('❌ SSO login failed:', result.error);
+                    statusDiv.textContent = '❌ SSO login failed: ' + result.error;
+                }
+            }
+        }
+
+        // Update UI based on authentication status
+        function updateUI() {
+            const isAuth = auth.isAuthenticated();
+            const session = auth.getSession();
+            
+            if (isAuth && session) {
+                statusDiv.className = 'status authenticated';
+                statusDiv.textContent = `✅ Authenticated as ${session.username}`;
+                
+                registerSection.style.display = 'none';
+                loginSection.style.display = 'none';
+                sessionSection.style.display = 'block';
+                
+                sessionInfo.textContent = JSON.stringify({
+                    username: session.username,
+                    pub: session.pub,
+                    exp: new Date(session.exp).toISOString(),
+                    loginTime: new Date(session.loginTime).toISOString(),
+                    timeUntilExpiry: Math.round((session.exp - Date.now()) / 1000) + ' seconds'
+                }, null, 2);
+            } else {
+                statusDiv.className = 'status unauthenticated';
+                statusDiv.textContent = '🔒 Not authenticated';
+                
+                registerSection.style.display = 'block';
+                loginSection.style.display = 'block';
+                sessionSection.style.display = 'none';
+                
+                sessionInfo.textContent = 'No session data';
+            }
+        }
+
+        // Register new user
+        registerBtn.addEventListener('click', async () => {
+            const username = regUsernameInput.value.trim();
+            const password = regPasswordInput.value;
+            
+            if (!username || !password) {
+                alert('Please enter username and password');
+                return;
+            }
+            
+            registerBtn.disabled = true;
+            registerBtn.textContent = 'Registering...';
+            
+            try {
+                const result = await auth.register(username, password);
+                
+                if (result.success) {
+                    alert('Registration successful! You can now login.');
+                    regUsernameInput.value = '';
+                    regPasswordInput.value = '';
+                } else {
+                    alert('Registration failed: ' + result.error);
+                }
+            } catch (error) {
+                alert('Registration error: ' + error.message);
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.textContent = 'Register';
+            }
+        });
+
+        // Login
+        loginBtn.addEventListener('click', async () => {
+            const username = loginUsernameInput.value.trim();
+            const password = loginPasswordInput.value;
+            
+            if (!username || !password) {
+                alert('Please enter username and password');
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
+            
+            try {
+                const result = await auth.login(username, password);
+                
+                if (result.success) {
+                    loginUsernameInput.value = '';
+                    loginPasswordInput.value = '';
+                    updateUI();
+                } else {
+                    alert('Login failed: ' + result.error);
+                }
+            } catch (error) {
+                alert('Login error: ' + error.message);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login';
+            }
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', async () => {
+            await auth.logout();
+            updateUI();
+        });
+
+        // Clear all data
+        clearDataBtn.addEventListener('click', () => {
+            if (confirm('This will clear all stored authentication data. Are you sure?')) {
+                auth.clearAllData();
+                updateUI();
+            }
+        });
+
+        // SSO Login
+        ssoLoginBtn.addEventListener('click', () => {
+            auth.ssoLogin({
+                redirectUri: window.location.origin + window.location.pathname,
+                clientId: 'app1-secure'
+            });
+        });
+
+        // SSO Status Check
+        ssoCheckBtn.addEventListener('click', () => {
+            const session = auth.getSession();
+            if (session && session.ssoLogin) {
+                alert('SSO session active: ' + JSON.stringify({
+                    username: session.username || 'SSO User',
+                    expires: new Date(session.exp).toISOString()
+                }, null, 2));
+            } else if (session) {
+                alert('Direct login session active (not SSO)');
+            } else {
+                alert('No active session');
+            }
+        });
+
+        // Debug localStorage
+        debugBtn.addEventListener('click', () => {
+            const items = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                items[key] = localStorage.getItem(key);
+            }
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const debugInfo = {
+                localStorage: items,
+                urlParams: {
+                    code: urlParams.get('code'),
+                    state: urlParams.get('state')
+                },
+                currentURL: window.location.href
+            };
+            
+            console.log('🔍 Debug Info:', debugInfo);
+            alert('Debug info logged to console:\n' + JSON.stringify(debugInfo, null, 2));
+        });
+
+        // Handle SSO callback on page load
+        handleSSO();
+
+        // Initialize UI
+        updateUI();
+
+        console.log('🚀 App 1 initialized with secure GunAuth client');
+    </script>
+</body>
+</html>

@@ -1,6 +1,26 @@
 # GunAuth - Minimal Identity Provider
 
-A minimal identity provider built with GUN and SEA, designed for peer-to-peer authentication.
+A minimal identity provider built with GUN and SEA, designed for peer-to-peer authentication with **cross-domain session sharing** capabilities.
+
+## ✨ Features
+
+- 🔐 **Cryptographic Authentication** using GUN's SEA (Security, Encryption, Authorization)
+- 🌐 **Cross-Domain Sessions** - Share authentication across multiple apps/domains
+- 🔄 **Two Session Sharing Methods**:
+  - **SSO Redirect Flow** (OAuth2-like) - Most secure for production
+  - **PostMessage API** - Seamless UX for trusted domains
+- 🚀 **Zero-Config Setup** - Works out of the box
+- 📱 **Framework Agnostic** - Works with any frontend framework
+- 🌊 **P2P Ready** - Built on GUN's distributed architecture
+
+## 🎯 Cross-Domain Authentication
+
+GunAuth now supports sharing authentication sessions across multiple applications and domains! Perfect for:
+- Microservice architectures
+- Multiple frontend applications
+- Cross-domain SSO requirements
+
+**Quick Start**: See the [Cross-Domain Documentation](examples/CROSS_DOMAIN_README.md) for full implementation details.
 
 ## 📦 Installation
 
@@ -16,6 +36,27 @@ Or use as a template:
 ```bash
 npx create-gunauth-app my-auth-server
 ```
+
+## 🧪 Examples & Testing
+
+The `examples/` directory contains complete working examples of cross-domain authentication:
+
+```bash
+# Quick demo setup
+cd examples
+./start-demo.sh
+
+# Or test the API
+npm run test:cross-domain
+```
+
+**Examples include**:
+- Two demo web applications showing session sharing
+- Complete SSO and PostMessage client libraries  
+- Automated test suite
+- Full documentation and setup guides
+
+See the [Examples README](examples/README.md) for details.
 
 ## 🚀 Deployment
 
