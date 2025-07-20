@@ -1,6 +1,6 @@
 {
   "name": "gunauth",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Minimal identity provider using GUN and SEA",
   "main": "index.js",
   "type": "module",
