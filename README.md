@@ -5,12 +5,8 @@ A minimal identity provider built with GUN and SEA, designed for peer-to-peer au
 ## 📦 Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/draeder/gunauth.git
-cd gunauth
-
-# Install dependencies
-npm install
+# Install
+npm install gunauth
 
 # Start the server
 npm start
@@ -1183,7 +1179,6 @@ The application includes several reliable public GUN relays:
 - `https://gun-eu.herokuapp.com/gun` - European relay
 - `https://peer.wallie.io/gun` - Community relay
 - `https://relay.peer.ooo/gun` - Peer.ooo relay
-- WebSocket versions for real-time sync
 
 ### Custom Relay Configuration
 
@@ -1231,9 +1226,6 @@ console.log('GUN relay server running on port 8765');
 5. **Backup**: Regular backups of relay data
 
 ## 🛡️ Production Considerations for Cloud Deployment
-
-### Security Best Practices
-```
 
 ## �️ Production Considerations for Cloud Deployment
 
@@ -1433,6 +1425,10 @@ services:
 ## 🛠 Development
 
 ```bash
+# Clone the repository
+git clone https://github.com/draeder/gunauth.git
+cd gunauth
+
 # Install dependencies
 npm install
 
@@ -1441,6 +1437,9 @@ npm run dev
 
 # Start production server
 npm start
+
+# Run test
+npm test
 ```
 
 ## 📦 Tech Stack
@@ -1494,10 +1493,4 @@ const verifyResponse = await fetch('https://your-app-domain.com/verify', {
 
 MIT
 
-A decentralized Identity Provider built on GUN SEA
-```
-
-## 📄 License
-
-MIT
 A decentralized Identity Provider built on GUN SEA
