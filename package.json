@@ -1,0 +1,29 @@
+{
+  "name": "gunauth",
+  "version": "1.0.0",
+  "description": "Minimal identity provider using GUN and SEA",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "gun": "^0.2020.1240",
+    "node-fetch": "^3.3.2"
+  },
+  "keywords": [
+    "gun",
+    "sea",
+    "identity",
+    "authentication",
+    "p2p"
+  ],
+  "author": "",
+  "license": "MIT"
+}

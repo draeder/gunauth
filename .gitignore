@@ -1,3 +1,14 @@
+# Gun data
+radata/
+
+# Terraform
+terraform/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
 # Logs
 logs
 *.log

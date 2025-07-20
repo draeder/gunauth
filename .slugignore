@@ -1,0 +1,11 @@
+# Files to ignore when building Heroku slug
+node_modules/
+terraform/
+test.js
+.git/
+.env*
+radata/
+*.log
+.DS_Store
+README.md
+LICENSE

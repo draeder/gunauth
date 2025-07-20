@@ -1,0 +1,40 @@
+{
+  "name": "GunAuth Identity Provider",
+  "description": "A minimal identity provider built with GUN and SEA for peer-to-peer authentication",
+  "repository": "https://github.com/draeder/gunauth",
+  "logo": "https://gun.eco/see/gun.png",
+  "keywords": [
+    "gun",
+    "sea",
+    "identity",
+    "authentication",
+    "p2p",
+    "blockchain",
+    "decentralized"
+  ],
+  "website": "https://github.com/draeder/gunauth",
+  "success_url": "/",
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "environments": {
+    "production": {
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "scripts": {
+    "postdeploy": "echo 'GunAuth Identity Provider deployed successfully!'"
+  },
+  "addons": []
+}
