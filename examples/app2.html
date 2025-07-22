@@ -28,6 +28,13 @@
         .form-group {
             margin-bottom: 15px;
         }
+        .auth-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
         input[type="text"], input[type="password"] {
             width: 100%;
             padding: 10px;
@@ -66,252 +73,335 @@
             🔒 Not authenticated
         </div>
 
-        <!-- SSO Method -->
-        <div id="ssoSection">
-            <h3>🌐 SSO Authentication</h3>
-            <p><em>OAuth2-like redirect flow - most secure for production</em></p>
-            <button id="ssoLoginBtn" style="background-color: #17a2b8;">Login via SSO</button>
-            <button id="ssoCheckBtn">Check SSO Status</button>
-        </div>
-
-        <!-- Direct Registration/Login -->
-        <div id="directAuthSection">
-            <h3>🔐 Direct Authentication</h3>
-            <p><em>Register and login directly with secure client-side key storage</em></p>
-
-        <!-- Registration Form -->
-        <div id="registerSection">
-            <h3>Register New User</h3>
+        <!-- Registration -->
+        <div class="auth-section" id="registerSection">
+            <h3>📝 Register New User</h3>
+            <p><em>Create account with secure client-side key storage</em></p>
             <div class="form-group">
                 <input type="text" id="regUsername" placeholder="Username" required>
             </div>
             <div class="form-group">
                 <input type="password" id="regPassword" placeholder="Password" required>
             </div>
-            <button id="registerBtn">Register</button>
+            <button id="registerBtn" style="background-color: #007bff;">Register</button>
         </div>
 
-        <!-- Login Form -->
-        <div id="loginSection">
-            <h3>Login</h3>
+        <!-- SSO Authentication -->
+        <div class="auth-section" id="ssoSection">
+            <h3>🌐 SSO Authentication</h3>
+            <p><em>OAuth2-like redirect flow - most secure for production</em></p>
+            <button id="ssoLoginBtn" style="background-color: #17a2b8;">Login via SSO</button>
+        </div>
+
+        <!-- Gun.user.recall() Integration -->
+        <div class="auth-section" id="recallSection">
+            <h3>🔄 gun.user.recall() Integration</h3>
+            <p><em>Gun.js compatible session restoration - try auto recall first!</em></p>
+            
             <div class="form-group">
-                <input type="text" id="loginUsername" placeholder="Username" required>
+                <button id="recallAutoBtn" style="background-color: #28a745;">Auto Recall Session</button>
+            </div>
+            
+            <div class="form-group">
+                <input type="text" id="recallTotpUsername" placeholder="Username (for TOTP recall)">
+                <input type="password" id="recallTotpPassword" placeholder="Password (for TOTP recall)">
+                <input type="text" id="recallTotpCode" placeholder="TOTP Code" maxlength="6">
+                <button id="recallTotpBtn" style="background-color: #6f42c1;">Recall with TOTP</button>
+            </div>
+            
+            <div id="recallResult" style="display:none; background:#f8f9fa; padding:10px; border-radius:4px; margin:10px 0; font-family:monospace; font-size:12px;"></div>
+        </div>
+
+        <!-- TOTP Cross-Domain Login -->
+        <div class="auth-section" id="totpLoginSection">
+            <h3>🔐 TOTP Cross-Domain Login</h3>
+            <p><em>Login with username and TOTP code from primary domain</em></p>
+            <div class="form-group">
+                <input type="text" id="totpUsername" placeholder="Username" required>
             </div>
             <div class="form-group">
-                <input type="password" id="loginPassword" placeholder="Password" required>
+                <input type="text" id="totpCode" placeholder="6-digit TOTP code" maxlength="6" pattern="[0-9]{6}" required>
             </div>
-            <button id="loginBtn">Login</button>
+            <button id="totpLoginBtn" style="background-color: #6f42c1;">Login with TOTP</button>
+            <div id="totpStatus" style="margin-top: 10px; font-style: italic;"></div>
         </div>
 
-        <!-- Session Management -->
-        <div id="sessionSection" style="display:none;">
-            <h3>Session Management</h3>
-            <button id="logoutBtn">Logout</button>
-            <button id="clearDataBtn" style="background-color: #dc3545;">Clear All Data</button>
-        </div>
+        <!-- Session Information -->
+        <div id="sessionInfo" class="session-info" style="display: none;"></div>
 
-        <!-- Session Info Display -->
-        <div class="session-info" id="sessionInfo">
-            No session data
-        </div>
-
-        <!-- Cross-domain test -->
-        <div id="crossDomainTest">
-            <h3>Cross-Domain Test</h3>
-            <p>Test if session works in <a href="http://localhost:8001" target="_blank">App 1 (Port 8001)</a></p>
-            <p><strong>Expected Behavior:</strong> Login in one app should be accessible in the other via Gun P2P network</p>
-        </div>
+        <p><small>Cross-domain test: <a href="http://localhost:8001/app1.html" target="_blank">App 1 (Port 8001)</a></small></p>
     </div>
 
-    <!-- Include Gun and GunAuth Client -->
+    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="totp-client.js"></script>
     <script src="gunauth-client.js"></script>
-
     <script>
-        // Initialize GunAuth Client
-        const auth = new GunAuthClient('http://localhost:8000');
-        
+        console.log('🌟 App 2 initialized with secure GunAuth client');
+
+        // Initialize GunAuth client with HTTP-only Gun connection
+        const auth = new GunAuthClient();
+
         // DOM elements
-        const statusDiv = document.getElementById('status');
+        const statusEl = document.getElementById('status');
         const sessionInfo = document.getElementById('sessionInfo');
-        const registerSection = document.getElementById('registerSection');
-        const loginSection = document.getElementById('loginSection');
-        const sessionSection = document.getElementById('sessionSection');
-        
+
+        // Registration elements
+        const registerBtn = document.getElementById('registerBtn');
         const regUsernameInput = document.getElementById('regUsername');
         const regPasswordInput = document.getElementById('regPassword');
-        const registerBtn = document.getElementById('registerBtn');
-        
-        const loginUsernameInput = document.getElementById('loginUsername');
-        const loginPasswordInput = document.getElementById('loginPassword');
-        const loginBtn = document.getElementById('loginBtn');
-        
-        const logoutBtn = document.getElementById('logoutBtn');
-        const clearDataBtn = document.getElementById('clearDataBtn');
-        
+
+        // SSO elements
         const ssoLoginBtn = document.getElementById('ssoLoginBtn');
-        const ssoCheckBtn = document.getElementById('ssoCheckBtn');
+
+        // TOTP elements
+        const totpLoginBtn = document.getElementById('totpLoginBtn');
+
+        // Gun.user.recall() elements
+        const recallAutoBtn = document.getElementById('recallAutoBtn');
+        const recallTotpBtn = document.getElementById('recallTotpBtn');
+        const recallTotpUsernameInput = document.getElementById('recallTotpUsername');
+        const recallTotpPasswordInput = document.getElementById('recallTotpPassword');
+        const recallTotpCodeInput = document.getElementById('recallTotpCode');
+        const recallResult = document.getElementById('recallResult');
 
         // Handle SSO callback if present
         async function handleSSO() {
             if (auth.isSSOCallback()) {
                 console.log('🔄 Processing SSO callback');
                 const result = await auth.handleSSOCallback();
-                
                 if (result.success) {
-                    updateUI();
-                    alert('SSO login successful!');
-                } else {
-                    alert('SSO login failed: ' + result.error);
+                    updateUI(true, result.user);
                 }
             }
         }
 
         // Update UI based on authentication status
-        function updateUI() {
-            const isAuth = auth.isAuthenticated();
-            const session = auth.getSession();
-            
-            if (isAuth && session) {
-                statusDiv.className = 'status authenticated';
-                statusDiv.textContent = `✅ Authenticated as ${session.username}`;
-                
-                registerSection.style.display = 'none';
-                loginSection.style.display = 'none';
-                sessionSection.style.display = 'block';
-                
-                sessionInfo.textContent = JSON.stringify({
-                    username: session.username,
-                    pub: session.pub,
-                    exp: new Date(session.exp).toISOString(),
-                    loginTime: new Date(session.loginTime).toISOString(),
-                    timeUntilExpiry: Math.round((session.exp - Date.now()) / 1000) + ' seconds',
-                    source: 'App 2 (localhost:8002)'
-                }, null, 2);
+        function updateUI(authenticated, user = null) {
+            if (authenticated && user) {
+                statusEl.className = 'status authenticated';
+                statusEl.textContent = `✅ Authenticated as: ${user.username}`;
+                sessionInfo.style.display = 'block';
+                sessionInfo.textContent = `Session: ${JSON.stringify(user, null, 2)}`;
             } else {
-                statusDiv.className = 'status unauthenticated';
-                statusDiv.textContent = '🔒 Not authenticated';
-                
-                registerSection.style.display = 'block';
-                loginSection.style.display = 'block';
-                sessionSection.style.display = 'none';
-                
-                sessionInfo.textContent = 'No session data';
+                statusEl.className = 'status unauthenticated';
+                statusEl.textContent = '🔒 Not authenticated';
+                sessionInfo.style.display = 'none';
             }
         }
 
-        // Register new user
+        // Registration handler
         registerBtn.addEventListener('click', async () => {
             const username = regUsernameInput.value.trim();
-            const password = regPasswordInput.value;
+            const password = regPasswordInput.value.trim();
             
             if (!username || !password) {
-                alert('Please enter username and password');
+                alert('Please fill in both fields');
                 return;
             }
-            
+
             registerBtn.disabled = true;
             registerBtn.textContent = 'Registering...';
             
             try {
                 const result = await auth.register(username, password);
-                
                 if (result.success) {
-                    alert('Registration successful! You can now login.');
+                    alert('✅ Registration successful! You can now login.');
                     regUsernameInput.value = '';
                     regPasswordInput.value = '';
                 } else {
-                    alert('Registration failed: ' + result.error);
+                    alert(`❌ Registration failed: ${result.error}`);
                 }
             } catch (error) {
-                alert('Registration error: ' + error.message);
+                console.error('Registration error:', error);
+                alert(`❌ Registration error: ${error.message}`);
             } finally {
                 registerBtn.disabled = false;
                 registerBtn.textContent = 'Register';
             }
         });
 
-        // Login
-        loginBtn.addEventListener('click', async () => {
-            const username = loginUsernameInput.value.trim();
-            const password = loginPasswordInput.value;
+        // SSO Login handler
+        ssoLoginBtn.addEventListener('click', async () => {
+            ssoLoginBtn.disabled = true;
+            ssoLoginBtn.textContent = 'Redirecting...';
             
-            if (!username || !password) {
-                alert('Please enter username and password');
+            try {
+                const result = await auth.ssoLogin('http://localhost:8002/app2.html');
+                // This will redirect, so we shouldn't reach here
+            } catch (error) {
+                console.error('SSO error:', error);
+                alert(`❌ SSO error: ${error.message}`);
+                ssoLoginBtn.disabled = false;
+                ssoLoginBtn.textContent = 'Login via SSO';
+            }
+        });
+
+        // TOTP Cross-Domain Login
+        totpLoginBtn.addEventListener('click', async () => {
+            const username = document.getElementById('totpUsername').value.trim();
+            const totpCode = document.getElementById('totpCode').value.trim();
+            const statusEl = document.getElementById('totpStatus');
+            
+            if (!username || !totpCode) {
+                statusEl.textContent = '❌ Please enter both username and TOTP code';
+                statusEl.style.color = 'red';
+                return;
+            }
+
+            if (totpCode.length !== 6 || !/^\d{6}$/.test(totpCode)) {
+                statusEl.textContent = '❌ TOTP code must be exactly 6 digits';
+                statusEl.style.color = 'red';
+                return;
+            }
+
+            statusEl.textContent = '🔄 Loading TOTP session...';
+            statusEl.style.color = 'blue';
+            totpLoginBtn.disabled = true;
+
+            try {
+                const result = await auth.loginWithTOTP(username, totpCode);
+                
+                if (result.success) {
+                    statusEl.textContent = '✅ TOTP login successful!';
+                    statusEl.style.color = 'green';
+                    
+                    updateUI(true, {
+                        username: username,
+                        loginMethod: 'TOTP Cross-Domain',
+                        timestamp: new Date().toISOString()
+                    });
+
+                    // Clear form
+                    document.getElementById('totpUsername').value = '';
+                    document.getElementById('totpCode').value = '';
+                } else {
+                    statusEl.textContent = `❌ ${result.error}`;
+                    statusEl.style.color = 'red';
+                }
+            } catch (error) {
+                console.error('TOTP login error:', error);
+                statusEl.textContent = `❌ Login error: ${error.message}`;
+                statusEl.style.color = 'red';
+            } finally {
+                totpLoginBtn.disabled = false;
+            }
+        });
+
+        // Gun.user.recall() Event Listeners
+        
+        // Auto recall - tries all available methods
+        recallAutoBtn.addEventListener('click', async () => {
+            recallAutoBtn.disabled = true;
+            recallAutoBtn.textContent = 'Recalling...';
+            recallResult.style.display = 'block';
+            recallResult.textContent = 'Attempting automatic session recall...';
+            
+            try {
+                const result = await auth.user.recall();
+                
+                if (result.success) {
+                    recallResult.innerHTML = `
+                        <strong>✅ Recall Successful!</strong><br>
+                        Source: ${result.source}<br>
+                        Username: ${result.session?.username || 'N/A'}<br>
+                        Token: ${result.session?.token?.substring(0, 20)}...<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                    
+                    updateUI(true, {
+                        username: result.session?.username || 'Recalled User',
+                        loginMethod: 'gun.user.recall()',
+                        source: result.source,
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    recallResult.innerHTML = `
+                        <strong>❌ Recall Failed</strong><br>
+                        Error: ${result.error}<br>
+                        Available options: ${JSON.stringify(result.availableOptions, null, 2)}<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                }
+            } catch (error) {
+                recallResult.innerHTML = `
+                    <strong>❌ Recall Error</strong><br>
+                    Error: ${error.message}<br>
+                    Time: ${new Date().toISOString()}
+                `;
+            } finally {
+                recallAutoBtn.disabled = false;
+                recallAutoBtn.textContent = 'Auto Recall Session';
+            }
+        });
+
+        // TOTP-based recall
+        recallTotpBtn.addEventListener('click', async () => {
+            const username = recallTotpUsernameInput.value.trim();
+            const password = recallTotpPasswordInput.value;
+            const totpCode = recallTotpCodeInput.value.trim();
+            
+            if (!username || !password || !totpCode) {
+                alert('Please enter username, password, and current TOTP code for recall');
                 return;
             }
             
-            loginBtn.disabled = true;
-            loginBtn.textContent = 'Logging in...';
+            if (!/^\d{6}$/.test(totpCode)) {
+                alert('TOTP code must be 6 digits');
+                return;
+            }
+            
+            recallTotpBtn.disabled = true;
+            recallTotpBtn.textContent = 'Recalling...';
+            recallResult.style.display = 'block';
+            recallResult.textContent = 'Attempting TOTP-based recall...';
             
             try {
-                const result = await auth.login(username, password);
+                const result = await auth.user.recall({ username, password, totpCode });
                 
                 if (result.success) {
-                    loginUsernameInput.value = '';
-                    loginPasswordInput.value = '';
-                    updateUI();
+                    recallResult.innerHTML = `
+                        <strong>✅ TOTP Recall Successful!</strong><br>
+                        Source: ${result.source}<br>
+                        Username: ${result.session?.username || 'N/A'}<br>
+                        Token: ${result.session?.token?.substring(0, 20)}...<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                    
+                    updateUI(true, {
+                        username: result.session?.username || username,
+                        loginMethod: 'TOTP Recall',
+                        source: result.source,
+                        timestamp: new Date().toISOString()
+                    });
+                    
+                    // Clear sensitive data for security
+                    recallTotpPasswordInput.value = '';
+                    recallTotpCodeInput.value = '';
                 } else {
-                    alert('Login failed: ' + result.error);
+                    recallResult.innerHTML = `
+                        <strong>❌ TOTP Recall Failed</strong><br>
+                        Error: ${result.error}<br>
+                        Time: ${new Date().toISOString()}
+                    `;
                 }
             } catch (error) {
-                alert('Login error: ' + error.message);
+                recallResult.innerHTML = `
+                    <strong>❌ TOTP Recall Error</strong><br>
+                    Error: ${error.message}<br>
+                    Time: ${new Date().toISOString()}
+                `;
             } finally {
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Login';
+                recallTotpBtn.disabled = false;
+                recallTotpBtn.textContent = 'Recall with TOTP';
             }
         });
 
-        // Logout
-        logoutBtn.addEventListener('click', async () => {
-            await auth.logout();
-            updateUI();
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            handleSSO();
         });
-
-        // Clear all data
-        clearDataBtn.addEventListener('click', () => {
-            if (confirm('This will clear all stored authentication data. Are you sure?')) {
-                auth.clearAllData();
-                updateUI();
-            }
-        });
-
-        // SSO Login
-        ssoLoginBtn.addEventListener('click', () => {
-            auth.ssoLogin({
-                redirectUri: window.location.origin + window.location.pathname,
-                clientId: 'app2-secure'
-            });
-        });
-
-        // SSO Status Check
-        ssoCheckBtn.addEventListener('click', () => {
-            const session = auth.getSession();
-            if (session && session.ssoLogin) {
-                alert('SSO session active: ' + JSON.stringify({
-                    username: session.username || 'SSO User',
-                    expires: new Date(session.exp).toISOString()
-                }, null, 2));
-            } else if (session) {
-                alert('Direct login session active (not SSO)');
-            } else {
-                alert('No active session');
-            }
-        });
-
-        // Handle SSO callback on page load
-        handleSSO();
-
-        // Initialize UI
-        updateUI();
-
-        // Periodically check for session updates from other apps
-        setInterval(() => {
-            updateUI();
-        }, 5000);
-
-        console.log('🌟 App 2 initialized with secure GunAuth client');
     </script>
 </body>
 </html>

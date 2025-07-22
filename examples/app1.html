@@ -10,7 +10,7 @@
             max-width: 800px;
             margin: 20px auto;
             padding: 20px;
-            background-color: #f0f8ff;
+            background: #f0f8ff;
         }
         .container {
             background: white;
@@ -84,10 +84,13 @@
         <div id="registerSection">
             <h3>Register New User</h3>
             <div class="form-group">
-                <input type="text" id="regUsername" placeholder="Username" required>
+                <input type="text" id="regUsername" placeholder="Username (3-30 chars, letters/numbers/_/- only)" required>
             </div>
             <div class="form-group">
-                <input type="password" id="regPassword" placeholder="Password" required>
+                <input type="password" id="regPassword" placeholder="Password (min 8 chars, need: A-Z, a-z, 0-9)" required>
+                <div class="validation-help">
+                    <small style="color: #666;">Password requirements: 8-128 characters, at least one uppercase, lowercase, and number</small>
+                </div>
             </div>
             <button id="registerBtn">Register</button>
         </div>
@@ -104,6 +107,34 @@
             <button id="loginBtn">Login</button>
         </div>
 
+        <!-- Gun.user.recall() Integration -->
+        <div id="recallSection">
+            <h3>🔄 gun.user.recall() Integration</h3>
+            <p><em>Gun.js compatible session restoration with automatic detection</em></p>
+            
+            <div class="form-group">
+                <button id="recallAutoBtn" style="background-color: #28a745;">Auto Recall Session</button>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">Attempts to restore session from storage, SSO, or TOTP automatically</div>
+            </div>
+            
+            <div class="form-group">
+                <input type="text" id="recallUsername" placeholder="Username (for login-based recall)" required>
+                <input type="password" id="recallPassword" placeholder="Password (for login-based recall)" required>
+                <button id="recallLoginBtn" style="background-color: #6c757d;">Recall with Login</button>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">Force recall using login credentials</div>
+            </div>
+            
+            <div class="form-group">
+                <input type="text" id="recallTotpUsername" placeholder="Username (for TOTP recall)" required>
+                <input type="password" id="recallTotpPassword" placeholder="Password (for TOTP recall)" required>
+                <input type="text" id="recallTotpCode" placeholder="Current TOTP Code" maxlength="6" required>
+                <button id="recallTotpBtn" style="background-color: #6f42c1;">Recall with TOTP</button>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">Recall using TOTP-encrypted session</div>
+            </div>
+            
+            <div id="recallResult" style="display:none; background:#f8f9fa; padding:10px; border-radius:4px; margin:10px 0; font-family:monospace; font-size:12px;"></div>
+        </div>
+
         <!-- Session Management -->
         <div id="sessionSection" style="display:none;">
             <h3>Session Management</h3>
@@ -118,14 +149,56 @@
 
         <!-- Cross-domain test -->
         <div id="crossDomainTest">
-            <h3>Cross-Domain Test</h3>
-            <p>Test if session works in <a href="http://localhost:8002" target="_blank">App 2 (Port 8002)</a></p>
+            <h3>🌐 Cross-Domain Session Sharing</h3>
+            <p><em>Share sessions across domains using encrypted user credentials or TOTP</em></p>
+            
+            <!-- TOTP Setup Section -->
+            <div class="form-group" style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+                <h4>🔐 TOTP (Automatically Configured)</h4>
+                <p style="font-size: 12px; color: #666; margin: 5px 0;">TOTP is automatically set up when you login. Use the current code for cross-domain authentication.</p>
+                <button id="setupTOTPBtn" style="background-color: #6f42c1; margin-bottom: 10px;">Show TOTP QR Code</button>
+                <div id="totpCurrentCode" style="display:none; background:#e8f5e8; padding:15px; border-radius:4px; margin:10px 0; text-align:center;">
+                    <h4 style="margin:0 0 10px 0; color:#2d5016;">🕐 Current TOTP Code</h4>
+                    <div style="font-size:24px; font-weight:bold; font-family:monospace; color:#2d5016;" id="currentTOTPDisplay">------</div>
+                    <div style="font-size:12px; color:#666; margin-top:5px;">Updates every 30 seconds • Use this code on other domains</div>
+                </div>
+                <div id="totpSetupInfo" style="display:none; background:#f8f9fa; padding:10px; border-radius:4px; font-family:monospace; font-size:12px;"></div>
+            </div>
+
+            <!-- Standard Session Sharing -->
+            <div class="form-group">
+                <h4>📤 Standard Session Sharing</h4>
+                <input type="text" id="shareUsername" placeholder="Username for session sharing" required>
+                <input type="password" id="sharePassword" placeholder="Password for session sharing" required>
+                <button id="shareSessionBtn" style="background-color: #17a2b8;">Share Session</button>
+            </div>
+
+            <!-- TOTP-Enhanced Session Sharing -->
+            <div class="form-group" style="border: 1px solid #28a745; padding: 10px; border-radius: 4px;">
+                <h4>🔒 TOTP-Encrypted Session Sharing</h4>
+                <input type="text" id="totpUsername" placeholder="Username" required>
+                <input type="password" id="totpPassword" placeholder="Password" required>
+                <input type="text" id="totpCode" placeholder="6-digit TOTP code" maxlength="6" pattern="[0-9]{6}" required>
+                <button id="shareTOTPBtn" style="background-color: #28a745;">Share with TOTP</button>
+            </div>
+
+            <!-- Load Sessions -->
+            <div class="form-group">
+                <h4>📥 Load Shared Sessions</h4>
+                <button id="checkSharedBtn" style="background-color: #28a745;">Load Standard Session</button>
+                <button id="loadTOTPBtn" style="background-color: #dc3545;">Load TOTP Session</button>
+                <button id="clearSharedBtn" style="background-color: #ffc107; color: black;">Clear Sessions</button>
+            </div>
+
+            <p><small>Test cross-domain: <a href="http://localhost:8002" target="_blank">App 2 (Port 8002)</a></small></p>
+            <p id="sessionSharingInfo" style="display:none; background:#e9ecef; padding:10px; border-radius:4px;"></p>
         </div>
     </div>
 
     <!-- Include Gun and GunAuth Client -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="totp-client.js"></script>
     <script src="gunauth-client.js"></script>
 
     <script>
@@ -153,6 +226,39 @@
         const ssoLoginBtn = document.getElementById('ssoLoginBtn');
         const ssoCheckBtn = document.getElementById('ssoCheckBtn');
         const debugBtn = document.getElementById('debugBtn');
+        
+        // Cross-domain session sharing elements
+        const shareUsernameInput = document.getElementById('shareUsername');
+        const sharePasswordInput = document.getElementById('sharePassword');
+        const shareSessionBtn = document.getElementById('shareSessionBtn');
+        const checkSharedBtn = document.getElementById('checkSharedBtn');
+        const clearSharedBtn = document.getElementById('clearSharedBtn');
+        const sessionSharingInfo = document.getElementById('sessionSharingInfo');
+        
+        // TOTP elements
+        const setupTOTPBtn = document.getElementById('setupTOTPBtn');
+        const totpSetupInfo = document.getElementById('totpSetupInfo');
+        const totpUsernameInput = document.getElementById('totpUsername');
+        const totpPasswordInput = document.getElementById('totpPassword');
+        const totpCodeInput = document.getElementById('totpCode');
+        const shareTOTPBtn = document.getElementById('shareTOTPBtn');
+        const loadTOTPBtn = document.getElementById('loadTOTPBtn');
+        
+        // TOTP display elements
+        const totpCurrentCode = document.getElementById('totpCurrentCode');
+        const currentTOTPDisplay = document.getElementById('currentTOTPDisplay');
+        let totpUpdateInterval = null;
+        
+        // Gun.user.recall() elements
+        const recallAutoBtn = document.getElementById('recallAutoBtn');
+        const recallLoginBtn = document.getElementById('recallLoginBtn');
+        const recallTotpBtn = document.getElementById('recallTotpBtn');
+        const recallUsernameInput = document.getElementById('recallUsername');
+        const recallPasswordInput = document.getElementById('recallPassword');
+        const recallTotpUsernameInput = document.getElementById('recallTotpUsername');
+        const recallTotpPasswordInput = document.getElementById('recallTotpPassword');
+        const recallTotpCodeInput = document.getElementById('recallTotpCode');
+        const recallResult = document.getElementById('recallResult');
 
         // Handle SSO callback if present
         async function handleSSO() {
@@ -165,6 +271,26 @@
                 if (result.success) {
                     updateUI();
                     console.log('✅ SSO login successful:', result);
+                    
+                    // Automatically create TOTP session vault for cross-domain access
+                    // Use the session from the callback result
+                    const session = result.session;
+                    if (session && session.username) {
+                        console.log('🔄 Creating TOTP session vault for cross-domain access...');
+                        
+                        try {
+                            const vaultResult = await auth.shareTOTPSessionVault(session.username, session.token);
+                            
+                            if (vaultResult.success) {
+                                console.log('✅ TOTP session vault created automatically');
+                                console.log('🔑 Current TOTP for immediate use:', vaultResult.currentTOTP);
+                            } else {
+                                console.warn('⚠️ Failed to create TOTP vault:', vaultResult.error);
+                            }
+                        } catch (error) {
+                            console.warn('⚠️ TOTP vault creation error:', error.message);
+                        }
+                    }
                 } else {
                     console.error('❌ SSO login failed:', result.error);
                     statusDiv.textContent = '❌ SSO login failed: ' + result.error;
@@ -192,6 +318,9 @@
                     loginTime: new Date(session.loginTime).toISOString(),
                     timeUntilExpiry: Math.round((session.exp - Date.now()) / 1000) + ' seconds'
                 }, null, 2);
+                
+                // Start TOTP display for authenticated users
+                startTOTPDisplay();
             } else {
                 statusDiv.className = 'status unauthenticated';
                 statusDiv.textContent = '🔒 Not authenticated';
@@ -201,6 +330,77 @@
                 sessionSection.style.display = 'none';
                 
                 sessionInfo.textContent = 'No session data';
+                
+                // Stop TOTP display
+                stopTOTPDisplay();
+            }
+        }
+
+        // TOTP Display Functions
+        async function startTOTPDisplay() {
+            const session = auth.getSession();
+            console.log('🔄 Starting TOTP display, session:', session);
+            
+            if (!session || !session.username) {
+                console.warn('⚠️ Cannot start TOTP display - no session or username');
+                return;
+            }
+            
+            // Show the TOTP display area
+            totpCurrentCode.style.display = 'block';
+            console.log('✅ TOTP display area made visible');
+            
+            // Update TOTP code immediately
+            console.log('🔄 Initial TOTP update...');
+            await updateTOTPDisplay();
+            
+            // Clear any existing interval
+            if (totpUpdateInterval) {
+                clearInterval(totpUpdateInterval);
+            }
+            
+            // Update every 30 seconds
+            console.log('🔄 Setting up 30-second TOTP update interval');
+            totpUpdateInterval = setInterval(() => {
+                console.log('🔄 30-second TOTP update triggered');
+                updateTOTPDisplay();
+            }, 30000);
+        }
+
+        function stopTOTPDisplay() {
+            totpCurrentCode.style.display = 'none';
+            if (totpUpdateInterval) {
+                clearInterval(totpUpdateInterval);
+                totpUpdateInterval = null;
+            }
+        }
+
+        async function updateTOTPDisplay() {
+            try {
+                const session = auth.getSession();
+                if (!session) return;
+                
+                let currentCode = '------';
+                
+                if (session.ssoLogin) {
+                    // For SSO users, get TOTP from session token
+                    const totpCode = await auth.getCurrentTOTPForSSO(session.username, session.token);
+                    if (totpCode) {
+                        currentCode = totpCode;
+                        console.log('🔑 TOTP Display updated:', currentCode);
+                    } else {
+                        console.warn('⚠️ No TOTP code returned');
+                    }
+                } else {
+                    // For regular users, we'll need the password - we'll handle this case
+                    // For now, show a message to scan QR code with authenticator app
+                    currentCode = 'Use App';
+                }
+                
+                currentTOTPDisplay.textContent = currentCode;
+            } catch (error) {
+                console.error('Error updating TOTP display:', error);
+                currentTOTPDisplay.textContent = '------';
             }
         }
 
@@ -211,6 +411,27 @@
             
             if (!username || !password) {
                 alert('Please enter username and password');
+                return;
+            }
+            
+            // Client-side validation to match server requirements
+            if (username.length < 3 || username.length > 30) {
+                alert('Username must be between 3 and 30 characters');
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+                alert('Username can only contain letters, numbers, hyphens, and underscores');
+                return;
+            }
+            
+            if (password.length < 8 || password.length > 128) {
+                alert('Password must be between 8 and 128 characters');
+                return;
+            }
+            
+            if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+                alert('Password must contain at least one lowercase letter, one uppercase letter, and one number');
                 return;
             }
             
@@ -255,6 +476,7 @@
                     loginUsernameInput.value = '';
                     loginPasswordInput.value = '';
                     updateUI();
+                    alert('✅ Login successful!');
                 } else {
                     alert('Login failed: ' + result.error);
                 }
@@ -318,11 +540,442 @@
                     code: urlParams.get('code'),
                     state: urlParams.get('state')
                 },
-                currentURL: window.location.href
+                currentURL: window.location.href,
+                localSharing: auth.enableLocalSharing
             };
             
             console.log('🔍 Debug Info:', debugInfo);
             alert('Debug info logged to console:\n' + JSON.stringify(debugInfo, null, 2));
+        });
+
+        // Gun.user.recall() Event Listeners
+        
+        // Auto recall - tries all available methods
+        recallAutoBtn.addEventListener('click', async () => {
+            recallAutoBtn.disabled = true;
+            recallAutoBtn.textContent = 'Recalling...';
+            recallResult.style.display = 'block';
+            recallResult.textContent = 'Attempting automatic session recall...';
+            
+            try {
+                const result = await auth.user.recall();
+                
+                if (result.success) {
+                    recallResult.innerHTML = `
+                        <strong>✅ Recall Successful!</strong><br>
+                        Source: ${result.source}<br>
+                        Username: ${result.session?.username || 'N/A'}<br>
+                        Token: ${result.session?.token?.substring(0, 20)}...<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                    updateUI();
+                } else {
+                    recallResult.innerHTML = `
+                        <strong>❌ Recall Failed</strong><br>
+                        Error: ${result.error}<br>
+                        Available options: ${JSON.stringify(result.availableOptions, null, 2)}<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                }
+            } catch (error) {
+                recallResult.innerHTML = `
+                    <strong>❌ Recall Error</strong><br>
+                    Error: ${error.message}<br>
+                    Time: ${new Date().toISOString()}
+                `;
+            } finally {
+                recallAutoBtn.disabled = false;
+                recallAutoBtn.textContent = 'Auto Recall Session';
+            }
+        });
+
+        // Login-based recall
+        recallLoginBtn.addEventListener('click', async () => {
+            const username = recallUsernameInput.value.trim();
+            const password = recallPasswordInput.value;
+            
+            if (!username || !password) {
+                alert('Please enter both username and password for recall');
+                return;
+            }
+            
+            recallLoginBtn.disabled = true;
+            recallLoginBtn.textContent = 'Recalling...';
+            recallResult.style.display = 'block';
+            recallResult.textContent = 'Attempting login-based recall...';
+            
+            try {
+                const result = await auth.user.recall({ username, password });
+                
+                if (result.success) {
+                    recallResult.innerHTML = `
+                        <strong>✅ Login Recall Successful!</strong><br>
+                        Source: ${result.source}<br>
+                        Username: ${result.session?.username || 'N/A'}<br>
+                        Token: ${result.session?.token?.substring(0, 20)}...<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                    updateUI();
+                    
+                    // Clear password for security
+                    recallPasswordInput.value = '';
+                } else {
+                    recallResult.innerHTML = `
+                        <strong>❌ Login Recall Failed</strong><br>
+                        Error: ${result.error}<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                }
+            } catch (error) {
+                recallResult.innerHTML = `
+                    <strong>❌ Login Recall Error</strong><br>
+                    Error: ${error.message}<br>
+                    Time: ${new Date().toISOString()}
+                `;
+            } finally {
+                recallLoginBtn.disabled = false;
+                recallLoginBtn.textContent = 'Recall with Login';
+            }
+        });
+
+        // TOTP-based recall
+        recallTotpBtn.addEventListener('click', async () => {
+            const username = recallTotpUsernameInput.value.trim();
+            const password = recallTotpPasswordInput.value;
+            const totpCode = recallTotpCodeInput.value.trim();
+            
+            if (!username || !password || !totpCode) {
+                alert('Please enter username, password, and current TOTP code for recall');
+                return;
+            }
+            
+            if (!/^\d{6}$/.test(totpCode)) {
+                alert('TOTP code must be 6 digits');
+                return;
+            }
+            
+            recallTotpBtn.disabled = true;
+            recallTotpBtn.textContent = 'Recalling...';
+            recallResult.style.display = 'block';
+            recallResult.textContent = 'Attempting TOTP-based recall...';
+            
+            try {
+                const result = await auth.user.recall({ username, password, totpCode });
+                
+                if (result.success) {
+                    recallResult.innerHTML = `
+                        <strong>✅ TOTP Recall Successful!</strong><br>
+                        Source: ${result.source}<br>
+                        Username: ${result.session?.username || 'N/A'}<br>
+                        Token: ${result.session?.token?.substring(0, 20)}...<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                    updateUI();
+                    
+                    // Clear sensitive data for security
+                    recallTotpPasswordInput.value = '';
+                    recallTotpCodeInput.value = '';
+                } else {
+                    recallResult.innerHTML = `
+                        <strong>❌ TOTP Recall Failed</strong><br>
+                        Error: ${result.error}<br>
+                        Time: ${new Date().toISOString()}
+                    `;
+                }
+            } catch (error) {
+                recallResult.innerHTML = `
+                    <strong>❌ TOTP Recall Error</strong><br>
+                    Error: ${error.message}<br>
+                    Time: ${new Date().toISOString()}
+                `;
+            } finally {
+                recallTotpBtn.disabled = false;
+                recallTotpBtn.textContent = 'Recall with TOTP';
+            }
+        });
+
+        // Setup TOTP for current user
+        setupTOTPBtn.addEventListener('click', async () => {
+            const session = auth.getSession();
+            
+            // For SSO users, use session data (already set up automatically)
+            if (session && session.ssoLogin && session.username) {
+                setupTOTPBtn.disabled = true;
+                setupTOTPBtn.textContent = 'Loading...';
+                
+                try {
+                    // For SSO users, just display the already configured TOTP
+                    // We'll call a method that retrieves the existing TOTP secret
+                    const result = await auth.displayTOTPForSSO(session.username, session.token);
+                    
+                    if (result.success) {
+                        totpSetupInfo.style.display = 'block';
+                        totpSetupInfo.innerHTML = `
+                            <strong>✅ TOTP Already Configured (SSO User)!</strong><br>
+                            <strong>QR Code URL:</strong><br>
+                            <a href="${result.qrURL}" target="_blank" style="word-break: break-all; font-size: 10px;">${result.qrURL}</a><br><br>
+                            <strong>Manual Entry:</strong><br>
+                            <code>${result.secret}</code><br><br>
+                            <em>Scan the QR URL with Google Authenticator, Authy, or similar app</em>
+                        `;
+                        alert('✅ TOTP QR code displayed! This was automatically configured when you logged in.');
+                    } else {
+                        alert(`❌ TOTP display failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    alert('Error displaying TOTP: ' + error.message);
+                } finally {
+                    setupTOTPBtn.disabled = false;
+                    setupTOTPBtn.textContent = 'Show TOTP QR Code';
+                }
+                return;
+            }
+            
+            // For regular users, use form inputs
+            const username = loginUsernameInput.value.trim() || shareUsernameInput.value.trim();
+            const password = loginPasswordInput.value.trim() || sharePasswordInput.value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter username and password first (either in login form or session sharing form)');
+                return;
+            }
+            
+            setupTOTPBtn.disabled = true;
+            setupTOTPBtn.textContent = 'Loading...';
+            
+            try {
+                const result = await auth.setupTOTP(username, password);
+                
+                if (result.success) {
+                    totpSetupInfo.style.display = 'block';
+                    totpSetupInfo.innerHTML = `
+                        <strong>✅ TOTP Already Configured!</strong><br>
+                        <strong>QR Code URL:</strong><br>
+                        <a href="${result.qrURL}" target="_blank" style="word-break: break-all; font-size: 10px;">${result.qrURL}</a><br><br>
+                        <strong>Manual Entry:</strong><br>
+                        <code>${result.secret}</code><br><br>
+                        <em>Scan the QR URL with Google Authenticator, Authy, or similar app</em>
+                    `;
+                    alert('✅ TOTP QR code displayed! This was automatically configured when you logged in.');
+                } else {
+                    alert(`❌ TOTP display failed: ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error displaying TOTP: ' + error.message);
+            } finally {
+                setupTOTPBtn.disabled = false;
+                setupTOTPBtn.textContent = 'Show TOTP QR Code';
+            }
+        });
+
+        // Share session with TOTP encryption
+        shareTOTPBtn.addEventListener('click', async () => {
+            const session = auth.getSession();
+            let username, password;
+            
+            // For SSO users, use session data
+            if (session && session.ssoLogin && session.username) {
+                username = session.username;
+                password = session.token; // Use session token as password for SSO users
+                
+                // Still need TOTP code
+                const totpCode = totpCodeInput.value.trim();
+                if (!totpCode) {
+                    alert('Please enter TOTP code from your authenticator app');
+                    return;
+                }
+                
+                if (!/^\d{6}$/.test(totpCode)) {
+                    alert('TOTP code must be exactly 6 digits');
+                    return;
+                }
+            } else {
+                // For regular users, use form inputs
+                username = totpUsernameInput.value.trim();
+                password = totpPasswordInput.value.trim();
+                const totpCode = totpCodeInput.value.trim();
+                
+                if (!username || !password || !totpCode) {
+                    alert('Please enter username, password, and TOTP code');
+                    return;
+                }
+                
+                if (!/^\d{6}$/.test(totpCode)) {
+                    alert('TOTP code must be exactly 6 digits');
+                    return;
+                }
+            }
+            
+            if (!auth.isAuthenticated()) {
+                alert('You must be logged in to share a session');
+                return;
+            }
+            
+            shareTOTPBtn.disabled = true;
+            shareTOTPBtn.textContent = 'Sharing...';
+            
+            try {
+                const totpCode = totpCodeInput.value.trim(); // Get TOTP code
+                const result = await auth.shareSessionWithTOTP(username, password, totpCode);
+                
+                if (result.success) {
+                    sessionSharingInfo.style.display = 'block';
+                    const userType = session && session.ssoLogin ? ' (SSO User)' : '';
+                    sessionSharingInfo.innerHTML = `✅ ${result.message}${userType}<br><small>🔐 Session encrypted with TOTP code. Auto-expires in ${result.totpWindow}.</small>`;
+                    
+                    // Only clear form inputs for non-SSO users
+                    if (!session?.ssoLogin) {
+                        totpUsernameInput.value = '';
+                        totpPasswordInput.value = '';
+                    }
+                    totpCodeInput.value = '';
+                    alert('✅ Session shared with TOTP encryption!');
+                } else {
+                    alert(`❌ ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error sharing TOTP session: ' + error.message);
+            } finally {
+                shareTOTPBtn.disabled = false;
+                shareTOTPBtn.textContent = 'Share with TOTP';
+            }
+        });
+
+        // Load TOTP-encrypted session
+        loadTOTPBtn.addEventListener('click', async () => {
+            const username = totpUsernameInput.value.trim() || shareUsernameInput.value.trim();
+            const password = totpPasswordInput.value.trim() || sharePasswordInput.value.trim();
+            const totpCode = totpCodeInput.value.trim();
+            
+            if (!username || !password || !totpCode) {
+                alert('Please enter username, password, and TOTP code');
+                return;
+            }
+            
+            if (!/^\d{6}$/.test(totpCode)) {
+                alert('TOTP code must be exactly 6 digits');
+                return;
+            }
+            
+            loadTOTPBtn.disabled = true;
+            loadTOTPBtn.textContent = 'Loading...';
+            
+            try {
+                const result = await auth.loadTOTPSession(username, password, totpCode);
+                
+                if (result.success) {
+                    sessionSharingInfo.style.display = 'block';
+                    sessionSharingInfo.innerHTML = `✅ ${result.message}<br><small>🔐 Decrypted with ${result.decryptedWith} TOTP code</small>`;
+                    updateUI();
+                    alert(`✅ TOTP session loaded for ${result.session.username}!`);
+                } else {
+                    alert(`❌ ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error loading TOTP session: ' + error.message);
+            } finally {
+                loadTOTPBtn.disabled = false;
+                loadTOTPBtn.textContent = 'Load TOTP Session';
+            }
+        });
+
+        // Share current session across domains
+        shareSessionBtn.addEventListener('click', async () => {
+            const username = shareUsernameInput.value.trim();
+            const password = sharePasswordInput.value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter both username and password for session sharing');
+                return;
+            }
+            
+            if (!auth.isAuthenticated()) {
+                alert('You must be logged in to share a session');
+                return;
+            }
+            
+            shareSessionBtn.disabled = true;
+            shareSessionBtn.textContent = 'Sharing...';
+            
+            try {
+                const result = await auth.shareSessionLocally(username, password);
+                
+                if (result.success) {
+                    sessionSharingInfo.style.display = 'block';
+                    sessionSharingInfo.innerHTML = `✅ ${result.message}<br><small>Session encrypted and stored for user: ${username}</small>`;
+                    shareUsernameInput.value = '';
+                    sharePasswordInput.value = '';
+                } else {
+                    alert(`❌ ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error sharing session: ' + error.message);
+            } finally {
+                shareSessionBtn.disabled = false;
+                shareSessionBtn.textContent = 'Share Session';
+            }
+        });
+
+        // Load shared cross-domain session
+        checkSharedBtn.addEventListener('click', async () => {
+            const username = shareUsernameInput.value.trim();
+            const password = sharePasswordInput.value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter both username and password to load shared session');
+                return;
+            }
+            
+            checkSharedBtn.disabled = true;
+            checkSharedBtn.textContent = 'Loading...';
+            
+            try {
+                const result = await auth.loadSharedSession(username, password);
+                
+                if (result.success) {
+                    alert(`✅ ${result.message}`);
+                    shareUsernameInput.value = '';
+                    sharePasswordInput.value = '';
+                    sessionSharingInfo.style.display = 'block';
+                    sessionSharingInfo.innerHTML = `✅ Session loaded for user: ${result.session.username}`;
+                    updateUI();
+                } else {
+                    alert(`❌ ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error loading shared session: ' + error.message);
+            } finally {
+                checkSharedBtn.disabled = false;
+                checkSharedBtn.textContent = 'Load Shared Session';
+            }
+        });
+
+        // Clear shared session
+        clearSharedBtn.addEventListener('click', async () => {
+            const username = shareUsernameInput.value.trim();
+            const password = sharePasswordInput.value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter both username and password to clear shared session');
+                return;
+            }
+            
+            if (confirm(`Clear shared session for user: ${username}?`)) {
+                try {
+                    const result = await auth.clearSharedSession(username, password);
+                    if (result.success) {
+                        alert(`✅ ${result.message}`);
+                        sessionSharingInfo.style.display = 'block';
+                        sessionSharingInfo.innerHTML = `✅ Shared session cleared for user: ${username}`;
+                        shareUsernameInput.value = '';
+                        sharePasswordInput.value = '';
+                    } else {
+                        alert(`❌ ${result.error}`);
+                    }
+                } catch (error) {
+                    alert('Error clearing shared session: ' + error.message);
+                }
+            }
         });
 
         // Handle SSO callback on page load

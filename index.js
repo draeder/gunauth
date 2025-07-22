@@ -1,78 +1,252 @@
 import express from 'express';
 import Gun from 'gun';
+import http from 'http';
+import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
+import { body, validationResult } from 'express-validator';
 
-const app = express();
-const port = process.env.PORT || 3000;
+// Utility function for conditional logging
+function debugLog(...args) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+}
 
-// Initialize Gun with multiple reliable relay peers
+function errorLog(...args) {
+  console.error(...args); // Always log errors
+}
+
+// JWT Security - Use dedicated key for JWT signing instead of Gun keypairs
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+
+// JWT utility functions
+function createJWT(payload) {
+  const header = Buffer.from(JSON.stringify({ typ: 'JWT', alg: 'HS256' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET)
+    .update(`${header}.${body}`)
+    .digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyJWT(token) {
+  try {
+    const [header, body, signature] = token.split('.');
+    const expectedSignature = crypto.createHmac('sha256', JWT_SECRET)
+      .update(`${header}.${body}`)
+      .digest('base64url');
+    
+    if (signature !== expectedSignature) {
+      return null;
+    }
+    
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    
+    // Check expiration
+    if (payload.exp && Date.now() / 1000 > payload.exp) {
+      return null;
+    }
+    
+    return payload;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Rate limiting configuration
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // 50 authentication attempts per window (increased for testing)
+  message: {
+    error: 'Too many authentication attempts, please try again in 15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window
+  message: {
+    error: 'Too many requests, please try again later'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Public Gun instance for all functionality (users, OAuth, encrypted sessions)
 const gunRelays = process.env.GUN_RELAYS 
   ? process.env.GUN_RELAYS.split(',')
   : [
       'https://gun-manhattan.herokuapp.com/gun',
-      'https://gunjs.herokuapp.com/gun',
+      'https://gunjs.herokuapp.com/gun', 
       'https://gun-us.herokuapp.com/gun',
       'https://gun-eu.herokuapp.com/gun',
       'https://peer.wallie.io/gun',
-      'https://relay.peer.ooo/gun',
-      'wss://gun-manhattan.herokuapp.com/gun',
-      'wss://gunjs.herokuapp.com/gun',
-      'wss://relay.peer.ooo/gun'
+      'https://relay.peer.ooo/gun'
     ];
 
-const gun = Gun(gunRelays);
+// Create Express app
+const app = express();
 
-// Helper functions for GUN-based session storage
-function getActiveSession(domain) {
+const server = http.createServer(app);
+
+// Create Gun with local server support
+const gun = Gun({
+  web: server,
+  peers: gunRelays
+});
+
+// User-scoped encrypted session sharing via public Gun network
+// Sessions encrypted with user credentials, stored using hash-based paths
+async function getUserSession(userPub) {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
-      console.log('GUN getActiveSession timeout for domain:', domain);
+      debugLog('User session timeout for pub:', userPub.substring(0, 20) + '...');
       resolve(null);
-    }, 5000);
+    }, 10000);
     
-    gun.get('sessions').get(domain).once((session, key) => {
+    // Create deterministic hash for session lookup (immutable storage)
+    const sessionHash = crypto.createHash('sha256')
+      .update(`session_${userPub}`)
+      .digest('hex')
+      .substring(0, 16); // Shorter for efficiency
+    
+    // Use collection-based immutable storage pattern to prevent enumeration attacks
+    gun.get("sessions").get(sessionHash).once((encryptedSession, key) => {
       clearTimeout(timeout);
-      console.log('GUN getActiveSession result:', { session, key, domain });
       
-      if (session && session.exp && Date.now() > session.exp) {
-        // Remove expired session
-        console.log('Session expired, removing:', session);
-        gun.get('sessions').get(domain).put(null);
+      if (encryptedSession && encryptedSession.exp && Date.now() > encryptedSession.exp) {
+        // Mark session as expired rather than deleting (immutable principle)
+        debugLog('User session expired');
+        gun.get("sessions").get(sessionHash + "_exp").put(Date.now());
         resolve(null);
+      } else if (encryptedSession) {
+        // Verify data integrity if present
+        if (encryptedSession.integrity) {
+          const expectedHash = crypto.createHash('sha256')
+            .update(JSON.stringify({
+              encrypted: encryptedSession.encrypted,
+              exp: encryptedSession.exp,
+              userPub: encryptedSession.userPub,
+              timestamp: encryptedSession.timestamp
+            }))
+            .digest('hex');
+          
+          if (encryptedSession.integrity !== expectedHash) {
+            debugLog('⚠️ Session integrity check failed');
+            resolve(null);
+            return;
+          }
+        }
+        
+        debugLog('Retrieved encrypted user session');
+        resolve(encryptedSession);
       } else {
-        resolve(session);
+        // Fallback to legacy storage for backward compatibility
+        gun.get('user_sessions').get(userPub).once((legacySession, key) => {
+          if (legacySession && legacySession.exp && Date.now() <= legacySession.exp) {
+            debugLog('Retrieved session from legacy storage, migrating...');
+            // Migrate to immutable storage
+            gun.get("sessions").get(sessionHash).put(legacySession);
+            resolve(legacySession);
+          } else {
+            resolve(null);
+          }
+        });
       }
     });
   });
 }
 
-function setActiveSession(domain, sessionData) {
-  return new Promise((resolve) => {
-    console.log('GUN setActiveSession:', { domain, sessionData });
-    const timeout = setTimeout(() => {
-      console.log('GUN setActiveSession timeout for domain:', domain);
-      resolve(false);
-    }, 5000);
+async function setUserSession(userPub, sessionData, userCredentials) {
+  try {
+    // Derive encryption key from user credentials + pub key
+    const encryptionKey = await Gun.SEA.work(
+      userCredentials.username + userCredentials.password, 
+      userPub
+    );
     
-    gun.get('sessions').get(domain).put(sessionData, (ack) => {
-      clearTimeout(timeout);
-      console.log('GUN setActiveSession result:', ack);
-      resolve(ack);
+    // Encrypt session data
+    const encrypted = await Gun.SEA.encrypt(sessionData, encryptionKey);
+    
+    const secureSessionData = {
+      encrypted: encrypted,
+      exp: sessionData.exp,
+      userPub: userPub,
+      timestamp: Date.now(),
+      // Add integrity hash to detect tampering
+      integrity: crypto.createHash('sha256')
+        .update(JSON.stringify({
+          encrypted,
+          exp: sessionData.exp,
+          userPub,
+          timestamp: Date.now()
+        }))
+        .digest('hex')
+    };
+    
+    // Only add domains if they exist and are non-empty
+    if (sessionData.domains && sessionData.domains.length > 0) {
+      secureSessionData.domains = sessionData.domains.join(','); // Store as comma-separated string
+    }
+    
+    // Create deterministic hash for immutable storage
+    const sessionHash = crypto.createHash('sha256')
+      .update(`session_${userPub}`)
+      .digest('hex')
+      .substring(0, 16); // Shorter for efficiency
+    
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log('User session set timeout');
+        resolve(false);
+      }, 5000);
+      
+    // Use collection-based storage pattern 
+    gun.get("sessions").get(sessionHash).put(secureSessionData, (ack) => {
+        clearTimeout(timeout);
+        if (ack.err) {
+          console.error('Failed to store session:', ack.err);
+          resolve(false);
+        } else {
+          debugLog('✅ Session stored with integrity hash');
+          // Also store session metadata in separate immutable path
+          gun.get("sessions_meta").get(sessionHash).put({
+            userPub,
+            created: Date.now(),
+            version: "1.0"
+          });
+          resolve(true);
+        }
+      });
     });
-  });
+  } catch (error) {
+    console.error('Session encryption error:', error);
+    return false;
+  }
 }
 
-function clearActiveSession(domain) {
-  return new Promise((resolve) => {
-    console.log('GUN clearActiveSession for domain:', domain);
-    const timeout = setTimeout(() => {
-      console.log('GUN clearActiveSession timeout for domain:', domain);
-      resolve(false);
-    }, 5000);
+async function clearUserSession(userPub) {
+  // Create deterministic hash for immutable storage
+  const sessionHash = crypto.createHash('sha256')
+    .update(`session_${userPub}`)
+    .digest('hex')
+    .substring(0, 16); // Shorter for efficiency
     
-    gun.get('sessions').get(domain).put(null, (ack) => {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(false), 10000);
+    
+    // Instead of deleting data (which breaks immutability), mark as cleared
+    gun.get("sessions").get(sessionHash + "_clr").put(Date.now(), (ack) => {
       clearTimeout(timeout);
-      console.log('GUN clearActiveSession result:', ack);
-      resolve(ack);
+      if (ack.err) {
+        console.error('Failed to clear session:', ack.err);
+        resolve(false);
+      } else {
+        debugLog('User session cleared');
+        resolve(true);
+      }
     });
   });
 }
@@ -80,6 +254,9 @@ function clearActiveSession(domain) {
 // Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Apply general rate limiting to all requests
+app.use(generalLimiter);
 
 // CORS for browser requests
 app.use((req, res, next) => {
@@ -93,6 +270,79 @@ app.use((req, res, next) => {
   }
 });
 
+// Input validation middleware (moved before routes for proper initialization)
+const validateRegistration = [
+  body('username')
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_-]+$/)
+    .withMessage('Username can only contain letters, numbers, hyphens, and underscores'),
+  body('password')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('Password must be between 8 and 128 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number')
+];
+
+const validateLogin = [
+  body('username')
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_-]+$/)
+    .withMessage('Invalid username format'),
+  body('password')
+    .isLength({ min: 1, max: 128 })
+    .withMessage('Password is required')
+];
+
+const validateSSO = [
+  body('token')
+    .notEmpty()
+    .withMessage('Token is required'),
+  body('pub')
+    .notEmpty()
+    .withMessage('Public key is required'),
+  body('redirect_uri')
+    .custom((value) => {
+      try {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          throw new Error('Invalid protocol');
+        }
+        // Allow localhost and IP addresses for development
+        if (url.hostname === 'localhost' || 
+            url.hostname.match(/^127\.\d+\.\d+\.\d+$/) || 
+            url.hostname.match(/^\d+\.\d+\.\d+\.\d+$/) ||
+            url.hostname.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+          return true;
+        }
+        throw new Error('Invalid hostname');
+      } catch (error) {
+        throw new Error('Valid redirect URI is required');
+      }
+    }),
+  body('client_id')
+    .optional({ nullable: true, checkFalsy: true })
+    .isLength({ max: 100 })
+    .withMessage('Client ID must be less than 100 characters')
+];
+
+// Validation error handler
+function handleValidationErrors(req, res, next) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    console.log('Validation failed for', req.path, '- errors count:', errors.array().length);
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: errors.array()
+    });
+  }
+  next();
+}
+
+// Serve Gun database over HTTP/WebSocket
+app.use(Gun.serve);
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ 
@@ -102,7 +352,8 @@ app.get('/', (req, res) => {
   });
 });
 
-// Session API endpoints for the session bridge
+// Session API endpoints for the session bridge (DEPRECATED - using user-scoped sessions now)
+/*
 app.get('/api/session', async (req, res) => {
   try {
     console.log('API: Getting session from GUN');
@@ -151,6 +402,7 @@ app.delete('/api/session', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+*/
 
 // Session bridge endpoint for PostMessage communication
 app.get('/session-bridge.html', (req, res) => {
@@ -351,6 +603,10 @@ app.get('/sso/authorize', (req, res) => {
         </form>
         
         <script>
+            const REDIRECT_URI = ${JSON.stringify(redirect_uri)};
+            const CLIENT_ID = ${JSON.stringify(client_id || '')};
+            const STATE = ${JSON.stringify(state || '')};
+            
             const form = document.getElementById('loginForm');
             const submitBtn = document.getElementById('submitBtn');
             const errorDiv = document.getElementById('error');
@@ -375,17 +631,16 @@ app.get('/sso/authorize', (req, res) => {
                     
                     const result = await response.json();
                     
-                    if (result.success) {
-                        // Create authorization code and redirect
+ e authorization code and redirect
                         const codeResponse = await fetch('/sso/code', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
                                 token: result.token, 
                                 pub: result.pub,
-                                redirect_uri: '${redirect_uri}',
-                                client_id: '${client_id}',
-                                state: '${state}'
+                                redirect_uri: REDIRECT_URI,
+                                client_id: CLIENT_ID,
+                                state: STATE
                             })
                         });
                         
@@ -394,9 +649,9 @@ app.get('/sso/authorize', (req, res) => {
                         if (codeResult.success) {
                             const params = new URLSearchParams({
                                 code: codeResult.code,
-                                state: '${state || ''}'
+                                state: STATE
                             });
-                            window.location.href = '${redirect_uri}?' + params.toString();
+                            window.location.href = REDIRECT_URI + '?' + params.toString();
                         } else {
                             throw new Error(codeResult.error);
                         }
@@ -418,7 +673,7 @@ app.get('/sso/authorize', (req, res) => {
   res.send(loginForm);
 });
 
-// SSO Login endpoint - handles authentication for SSO flow
+// SSO Login endpoint - handles authentication for SSO flow using Gun SEA properly
 app.post('/sso/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -456,38 +711,38 @@ app.post('/sso/login', async (req, res) => {
     const tempKeyPair = await Gun.SEA.pair();
 
     // Create token claims
-    const now = Date.now();
+    const now = Math.floor(Date.now() / 1000); // JWT uses seconds
     const issuer = process.env.ISSUER_URL || `${req.protocol}://${req.get('host')}`;
     const tokenClaims = {
       sub: username,
       iss: issuer,
       iat: now,
-      exp: now + (3600 * 1000), // 1 hour expiration
-      sso: true // Mark as SSO token
+      exp: now + 3600, // 1 hour expiration (in seconds)
+      sso: true, // Mark as SSO token
+      pub: tempKeyPair.pub // Include public key for verification
     };
 
-    // Sign the token using temporary keypair
-    const token = await Gun.SEA.sign(tokenClaims, tempKeyPair);
+    // Create JWT using dedicated signing key (not Gun keypair)
+    const token = createJWT(tokenClaims);
 
     // Store the session in Gun for cross-domain access
     const sessionData = {
       token,
       pub: tempKeyPair.pub, // Use temp keypair pub for verification
-      exp: tokenClaims.exp,
+      exp: tokenClaims.exp * 1000, // Convert back to milliseconds for storage
       username: username,
-      loginTime: now,
+      loginTime: Date.now(),
       sso: true
     };
 
-    console.log('🔐 Server: Storing SSO session in GUN database:', { username, sessionData });
-    await setActiveSession('localhost:8000', sessionData);
-    console.log('✅ Server: SSO session stored successfully in GUN database');
+    debugLog('🔐 Server: SSO session created for user');
+    // Note: Not storing SSO sessions server-side - client handles its own session storage
 
     res.json({
       success: true,
       token,
       pub: tempKeyPair.pub,
-      exp: tokenClaims.exp,
+      exp: tokenClaims.exp * 1000, // Convert back to milliseconds for client
       username: username
     });
 
@@ -500,18 +755,19 @@ app.post('/sso/login', async (req, res) => {
 });
 
 // SSO Code exchange - creates temporary authorization codes
-app.post('/sso/code', async (req, res) => {
+app.post('/sso/code', authLimiter, validateSSO, handleValidationErrors, async (req, res) => {
   try {
     const { token, pub, redirect_uri, client_id, state } = req.body;
     
     if (!token || !pub) {
+      console.log('SSO code request missing required fields');
       return res.status(400).json({ error: 'Token and pub are required' });
     }
     
-    // Verify the token first
-    const verifiedClaims = await Gun.SEA.verify(token, pub);
+    // Verify the token using JWT verification
+    const verifiedClaims = verifyJWT(token);
     if (!verifiedClaims) {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
     
     // Generate a temporary authorization code
@@ -594,7 +850,7 @@ app.post('/sso/token', async (req, res) => {
 });
 
 // User Registration
-app.post('/register', async (req, res) => {
+app.post('/register', authLimiter, validateRegistration, handleValidationErrors, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -604,10 +860,23 @@ app.post('/register', async (req, res) => {
       });
     }
 
-    // Check if user already exists
+    // Check if user already exists - use immutable storage pattern
+    const userHash = crypto.createHash('sha256')
+      .update(`user_${username}`)
+      .digest('hex')
+      .substring(0, 16); // Shorter for efficiency
+      
     const existingUser = await new Promise((resolve) => {
-      gun.get('users').get(username).once((data) => {
-        resolve(data);
+      // Check both new immutable storage and legacy storage
+      gun.get("users").get(userHash).once((data) => {
+        if (data) {
+          resolve(data);
+        } else {
+          // Fallback to legacy storage for existing users
+          gun.get('users').get(username).once((legacyData) => {
+            resolve(legacyData);
+          });
+        }
       });
     });
 
@@ -623,15 +892,31 @@ app.post('/register', async (req, res) => {
     // Hash the password using SEA.work
     const hashedPassword = await Gun.SEA.work(password, pair.pub);
     
-    // Store user data (only public information)
+    // Store user data (only public information) with integrity protection
     const userData = {
+      username,
       pub: pair.pub,
       hashedPassword,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      // Add integrity hash to detect tampering
+      integrity: crypto.createHash('sha256')
+        .update(JSON.stringify({
+          username,
+          pub: pair.pub,
+          hashedPassword,
+          createdAt: Date.now()
+        }))
+        .digest('hex')
     };
 
-    // Store in Gun database
-    gun.get('users').get(username).put(userData);
+    // Store in collection storage
+    gun.get("users").get(userHash).put(userData);
+    // Also store metadata separately
+    gun.get("users_meta").get(userHash).put({
+      username,
+      created: Date.now(),
+      version: "1.0"
+    });
     
     // SECURITY: Never store private keys server-side
     // Return the keypair to client for secure client-side storage
@@ -651,10 +936,10 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// User Login
-app.post('/login', async (req, res) => {
+// Login Challenge - Step 1: Request authentication challenge
+app.post('/login-challenge', authLimiter, validateLogin, handleValidationErrors, async (req, res) => {
   try {
-    const { username, password, priv } = req.body;
+    const { username, password } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({
@@ -662,10 +947,42 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    // Get user data
+    // Get user data using immutable storage pattern
+    const userHash = crypto.createHash('sha256')
+      .update(`user_${username}`)
+      .digest('hex')
+      .substring(0, 16); // Shorter for efficiency
+      
     const userData = await new Promise((resolve) => {
-      gun.get('users').get(username).once((data) => {
-        resolve(data);
+      // Check immutable storage first
+      gun.get("users").get(userHash).once((data) => {
+        if (data) {
+          // Verify data integrity
+          const expectedHash = crypto.createHash('sha256')
+            .update(JSON.stringify({
+              username: data.username,
+              pub: data.pub,
+              hashedPassword: data.hashedPassword,
+              createdAt: data.createdAt
+            }))
+            .digest('hex');
+          
+          if (data.integrity === expectedHash) {
+            debugLog('✅ User data integrity verified');
+            resolve(data);
+          } else {
+            debugLog('⚠️ User data integrity check failed');
+            resolve(null);
+          }
+        } else {
+          // Fallback to legacy storage for existing users
+          gun.get('users').get(username).once((legacyData) => {
+            if (legacyData) {
+              debugLog('📦 Loading user from legacy storage');
+            }
+            resolve(legacyData);
+          });
+        }
       });
     });
 
@@ -684,65 +1001,120 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    // If private key provided by client, use it; otherwise use challenge-response
-    let keyPair;
-    if (priv) {
-      // Verify the private key matches the stored public key
-      const testPair = { pub: userData.pub, priv };
-      const testMessage = 'auth-test-' + Date.now();
-      const signed = await Gun.SEA.sign(testMessage, testPair);
-      const verified = await Gun.SEA.verify(signed, userData.pub);
-      
-      if (!verified || verified !== testMessage) {
-        return res.status(401).json({
-          error: 'Invalid private key'
-        });
-      }
-      
-      keyPair = testPair;
-    } else {
+    // Generate challenge for cryptographic proof
+    const challenge = crypto.randomBytes(32).toString('hex');
+    const challengeId = crypto.randomBytes(16).toString('hex');
+    const expiresAt = Date.now() + 300000; // 5 minutes
+
+    // Store challenge temporarily
+    gun.get('auth-challenges').get(challengeId).put({
+      challenge,
+      username,
+      pub: userData.pub,
+      expires: expiresAt
+    });
+
+    debugLog('🔐 Server: Challenge generated for user:', username);
+
+    res.json({
+      success: true,
+      challengeId,
+      challenge,
+      pub: userData.pub
+    });
+
+  } catch (error) {
+    console.error('Challenge generation error:', error);
+    res.status(500).json({
+      error: 'Challenge generation failed'
+    });
+  }
+});
+
+// Login Verify - Step 2: Verify cryptographic signature (NO PRIVATE KEYS!)
+app.post('/login-verify', authLimiter, async (req, res) => {
+  try {
+    const { challengeId, signedChallenge } = req.body;
+
+    if (!challengeId || !signedChallenge) {
       return res.status(400).json({
-        error: 'Private key required for token signing'
+        error: 'Challenge ID and signed challenge are required'
       });
     }
 
-    // Create token claims
-    const now = Date.now();
+    // Get stored challenge
+    const challengeData = await new Promise((resolve) => {
+      gun.get('auth-challenges').get(challengeId).once((data) => {
+        resolve(data);
+      });
+    });
+
+    if (!challengeData) {
+      return res.status(401).json({
+        error: 'Invalid or expired challenge'
+      });
+    }
+
+    // Check if challenge has expired
+    if (Date.now() > challengeData.expires) {
+      // Clean up expired challenge
+      gun.get('auth-challenges').get(challengeId).put(null);
+      return res.status(401).json({
+        error: 'Challenge expired'
+      });
+    }
+
+    // Verify signature using Gun SEA - NO PRIVATE KEY NEEDED!
+    const verified = await Gun.SEA.verify(signedChallenge, challengeData.pub);
+
+    if (verified !== challengeData.challenge) {
+      return res.status(401).json({
+        error: 'Invalid signature'
+      });
+    }
+
+    // Clean up used challenge
+    gun.get('auth-challenges').get(challengeId).put(null);
+
+    // Create token claims with proper JWT structure
+    const now = Math.floor(Date.now() / 1000);
     const issuer = process.env.ISSUER_URL || `${req.protocol}://${req.get('host')}`;
     const tokenClaims = {
-      sub: username,
+      sub: challengeData.username,
       iss: issuer,
       iat: now,
-      exp: now + (3600 * 1000) // 1 hour expiration
+      exp: now + 3600, // 1 hour expiration
+      pub: challengeData.pub
     };
 
-    // Sign the token using the user's private key
-    const token = await Gun.SEA.sign(tokenClaims, keyPair);
+    // Create JWT using dedicated signing key
+    const token = createJWT(tokenClaims);
 
     // Store the session in Gun for cross-domain access
     const sessionData = {
       token,
-      pub: userData.pub,
-      exp: tokenClaims.exp,
-      username: username,
-      loginTime: now
+      pub: challengeData.pub,
+      exp: tokenClaims.exp * 1000,
+      username: challengeData.username,
+      loginTime: Date.now()
     };
 
-    console.log('🔐 Server: Storing session in GUN database:', { username, sessionData });
-    await setActiveSession('localhost:8000', sessionData);
-    console.log('✅ Server: Session stored successfully in GUN database');
+    debugLog('🔐 Server: Storing session in GUN database for user:', challengeData.username);
+    await setUserSession(challengeData.pub, sessionData, { username: challengeData.username, password: 'dummy' });
+    debugLog('✅ Server: Session stored successfully in GUN database');
 
     res.json({
       success: true,
       token,
-      pub: userData.pub,
-      exp: tokenClaims.exp
+      pub: challengeData.pub,
+      exp: tokenClaims.exp * 1000,
+      username: challengeData.username
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login verification error:', error);
     res.status(500).json({
-      error: 'Login failed'
+      error: 'Login verification failed'
     });
   }
 });
@@ -750,28 +1122,20 @@ app.post('/login', async (req, res) => {
 // Token Verification
 app.post('/verify', async (req, res) => {
   try {
-    const { token, pub } = req.body;
+    const { token } = req.body; // Only need token now, pub key is embedded
 
-    if (!token || !pub) {
+    if (!token) {
       return res.status(400).json({
-        error: 'Token and public key are required'
+        error: 'Token is required'
       });
     }
 
-    // Verify the token using the public key
-    const verifiedClaims = await Gun.SEA.verify(token, pub);
+    // Verify the token using JWT verification
+    const verifiedClaims = verifyJWT(token);
 
     if (!verifiedClaims) {
       return res.status(401).json({
-        error: 'Invalid token'
-      });
-    }
-
-    // Check if token has expired
-    const now = Date.now();
-    if (verifiedClaims.exp && now > verifiedClaims.exp) {
-      return res.status(401).json({
-        error: 'Token expired'
+        error: 'Invalid or expired token'
       });
     }
 
@@ -794,9 +1158,42 @@ app.get('/user/:username/pub', async (req, res) => {
   try {
     const { username } = req.params;
 
+    // Get user data using immutable storage pattern
+    const userHash = crypto.createHash('sha256')
+      .update(`user_${username}`)
+      .digest('hex')
+      .substring(0, 16); // Shorter for efficiency
+      
     const userData = await new Promise((resolve) => {
-      gun.get('users').get(username).once((data) => {
-        resolve(data);
+      // Check immutable storage first
+      gun.get("users").get(userHash).once((data) => {
+        if (data) {
+          // Verify data integrity
+          const expectedHash = crypto.createHash('sha256')
+            .update(JSON.stringify({
+              username: data.username,
+              pub: data.pub,
+              hashedPassword: data.hashedPassword,
+              createdAt: data.createdAt
+            }))
+            .digest('hex');
+          
+          if (data.integrity === expectedHash) {
+            debugLog('✅ User data integrity verified');
+            resolve(data);
+          } else {
+            debugLog('⚠️ User data integrity check failed');
+            resolve(null);
+          }
+        } else {
+          // Fallback to legacy storage
+          gun.get('users').get(username).once((legacyData) => {
+            if (legacyData) {
+              debugLog('📦 Loading user from legacy storage');
+            }
+            resolve(legacyData);
+          });
+        }
       });
     });
 
@@ -835,7 +1232,10 @@ app.use((req, res) => {
   });
 });
 
-app.listen(port, () => {
+// Server setup
+const port = process.env.PORT || 8000;
+
+server.listen(port, () => {
   console.log(`GunAuth Identity Provider running on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

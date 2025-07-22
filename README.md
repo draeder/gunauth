@@ -5,6 +5,7 @@ A minimal identity provider built with GUN and SEA, designed for peer-to-peer au
 ## ✨ Features
 
 - 🔐 **Cryptographic Authentication** using GUN's SEA (Security, Encryption, Authorization)
+- 🔄 **User Session Recall** - Gun.js compatible `gun.user.recall()` implementation
 - 🌐 **Cross-Domain Sessions** - Share authentication across multiple apps/domains
 - 🔄 **Two Session Sharing Methods**:
   - **SSO Redirect Flow** (OAuth2-like) - Most secure for production
@@ -36,6 +37,31 @@ Or use as a template:
 ```bash
 npx create-gunauth-app my-auth-server
 ```
+
+## 🔄 User Session Recall
+
+GunAuth now includes Gun.js compatible `gun.user.recall()` functionality for session restoration:
+
+```javascript
+// Initialize GunAuth client
+const gunauth = new GunAuthClient('http://localhost:8000');
+
+// Login with recall data storage
+await gunauth.loginWithRecall('username', 'password');
+
+// Later, recall the user session
+const recalled = await gunauth.user.recall();
+if (recalled.success) {
+    console.log('User session restored:', recalled.username);
+}
+
+// Gun.js compatible API
+gunauth.user.auth('username', 'password', callback);
+gunauth.user.recall({password: 'password'}, callback);
+console.log('Authenticated:', gunauth.user.is());
+```
+
+**See the [User Recall Documentation](examples/USER_RECALL_README.md) for complete implementation details.**
 
 ## 🧪 Examples & Testing
 
@@ -512,13 +538,38 @@ export function useGunAuth() {
   };
 
   const login = async (username, password) => {
-    const response = await fetch(`${GUNAUTH_URL}/login`, {
+    // Step 1: Request login challenge
+    const challengeResponse = await fetch(`${GUNAUTH_URL}/login-challenge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
     
-    const result = await response.json();
+    const challengeResult = await challengeResponse.json();
+    if (!challengeResult.success) {
+      throw new Error(challengeResult.error);
+    }
+    
+    // Step 2: Get stored keypair and sign challenge
+    const keyPair = await getStoredKeyPair(password);
+    if (!keyPair || keyPair.pub !== challengeResult.pub) {
+      throw new Error('Invalid credentials or keypair not found');
+    }
+    
+    const signature = await Gun.SEA.sign(challengeResult.challenge, keyPair);
+    
+    // Step 3: Submit signature for verification
+    const verifyResponse = await fetch(`${GUNAUTH_URL}/login-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        challenge: challengeResult.challenge,
+        signature
+      })
+    });
+    
+    const result = await verifyResponse.json();
     if (result.success) {
       setToken(result.token);
       setPub(result.pub);
@@ -626,13 +677,38 @@ export function useGunAuth() {
     error.value = null
     
     try {
-      const response = await fetch(`${GUNAUTH_URL}/login`, {
+      // Step 1: Request login challenge
+      const challengeResponse = await fetch(`${GUNAUTH_URL}/login-challenge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       })
       
-      const result = await response.json()
+      const challengeResult = await challengeResponse.json()
+      if (!challengeResult.success) {
+        throw new Error(challengeResult.error)
+      }
+      
+      // Step 2: Get stored keypair and sign challenge
+      const keyPair = await getStoredKeyPair(password)
+      if (!keyPair || keyPair.pub !== challengeResult.pub) {
+        throw new Error('Invalid credentials or keypair not found')
+      }
+      
+      const signature = await Gun.SEA.sign(challengeResult.challenge, keyPair)
+      
+      // Step 3: Submit signature for verification
+      const verifyResponse = await fetch(`${GUNAUTH_URL}/login-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          challenge: challengeResult.challenge,
+          signature
+        })
+      })
+      
+      const result = await verifyResponse.json()
       
       if (result.success) {
         token.value = result.token
@@ -1005,13 +1081,38 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     
     try {
-      const response = await fetch(`${GUNAUTH_URL}/login`, {
+      // Step 1: Request login challenge
+      const challengeResponse = await fetch(`${GUNAUTH_URL}/login-challenge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       })
       
-      const result = await response.json()
+      const challengeResult = await challengeResponse.json()
+      if (!challengeResult.success) {
+        throw new Error(challengeResult.error)
+      }
+      
+      // Step 2: Get stored keypair and sign challenge
+      const keyPair = await getStoredKeyPair(password)
+      if (!keyPair || keyPair.pub !== challengeResult.pub) {
+        throw new Error('Invalid credentials or keypair not found')
+      }
+      
+      const signature = await Gun.SEA.sign(challengeResult.challenge, keyPair)
+      
+      // Step 3: Submit signature for verification
+      const verifyResponse = await fetch(`${GUNAUTH_URL}/login-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          challenge: challengeResult.challenge,
+          signature
+        })
+      })
+      
+      const result = await verifyResponse.json()
       
       if (result.success) {
         token.value = result.token
@@ -1149,14 +1250,35 @@ Register a new user and generate SEA key pair.
 }
 ```
 
-### POST /login
-Authenticate user and return signed token.
+### POST /login-challenge
+Request a cryptographic challenge for login (Gun SEA pattern).
 
 **Request:**
 ```json
 {
   "username": "alice",
   "password": "secure-password"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "challenge": "random-challenge-string",
+  "pub": "user-public-key"
+}
+```
+
+### POST /login-verify
+Verify signature and return signed token (Gun SEA pattern).
+
+**Request:**
+```json
+{
+  "username": "alice",
+  "challenge": "random-challenge-string",
+  "signature": "sea-signed-challenge"
 }
 ```
 
@@ -1510,13 +1632,30 @@ const registerResponse = await fetch('https://your-app-domain.com/register', {
   })
 });
 
-// Login and get token
-const loginResponse = await fetch('https://your-app-domain.com/login', {
+// Login using Gun SEA challenge-response pattern
+const challengeResponse = await fetch('https://your-app-domain.com/login-challenge', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     username: 'alice',
     password: 'secure-password'
+  })
+});
+
+const challengeResult = await challengeResponse.json();
+
+// Sign the challenge with stored keypair
+const keyPair = await getStoredKeyPair('secure-password');
+const signature = await Gun.SEA.sign(challengeResult.challenge, keyPair);
+
+// Verify signature and get token
+const loginResponse = await fetch('https://your-app-domain.com/login-verify', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    username: 'alice',
+    challenge: challengeResult.challenge,
+    signature
   })
 });
 
